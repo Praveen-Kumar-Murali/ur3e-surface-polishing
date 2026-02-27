@@ -1,0 +1,138 @@
+# Universal Robots UR10e: Active Surface Polishing Routine
+# =========================================================
+# Description:
+# This script isolates the core user-programmed logic for an automated surface
+# polishing task using a UR10e.
+#
+# Unlike standard Cartesian movements, this logic implements Active Compliance
+# Control via UR's `force_mode`. It dynamically searches for the vehicle hood,
+# zeros the F/T sensor, and then applies a constant 10N downward force while
+# polishing across predefined waypoints, adapting instantly to surface curvature.
+
+def surface_polishing_routine():
+  
+  # Absolute Cartesian Waypoints (Pose format: p[x, y, z, rx, ry, rz])
+  global Waypoint_1_p  = p[.237067495147, -.508242089266, .165640529334, 1.025905992648, 2.881172065636, -.198951055008] # Pre-approach
+  global Waypoint_4_p  = p[.184397099143, -.429814294055, .255142056030, 1.509851156909, 2.694671449390, -.352730394616] # Search Start Height
+  
+  # Polishing Pattern Waypoints
+  global Waypoint_2_p  = p[.185981752500, -.467965088515, .148778751246, 1.531639792520, 2.702140563537, -.232876693528]
+  global Waypoint_3_p  = p[.196981483077, -.303213892548, .108745292320, 1.556680462832, 2.627775068426, -.255785203045]
+  global Waypoint_5_p  = p[.091082969179, -.282105468176, .109657918876, 1.634790332765, 2.654482367780, -.276081265898]
+  global Waypoint_6_p  = p[.064242872553, -.440520391838, .148524018187, 1.609013920708, 2.628989033000, -.281404742815]
+  global Waypoint_7_p  = p[-.056512300334, -.437502632652, .151448334715, 1.676379226533, 2.616701644553, -.254178335552]
+  global Waypoint_8_p  = p[-.031269910668, -.273216854321, .110903004507, 1.920498295061, 2.318033733146, -.231685708377]
+  global Waypoint_9_p  = p[-.132208567172, -.250772276206, .112615356594, 2.082906623236, 2.275607629364, -.306259007394]
+  global Waypoint_10_p = p[-.186537467153, -.405949756596, .152964457065, 1.634783688731, 2.645566035803, -.309251385350]
+  
+  global Waypoint_11_p = p[-.177765952047, -.418394871514, .287068338081, -1.795086962611, -2.510769535140, .421978865635] # Safe Exit
+  global Waypoint_11_q = [0.8730859756469727, -1.0754476350596924, 1.1390956083880823, -1.9092937908568324, -1.5756304899798792, 0.5507361888885498]
+  
+  
+  # Helper Function: Calculates a deep terminal point for the force-search vector
+  def calculate_point_to_move_towards(feature, direction, position_distance):
+    local posDir=[direction[0], direction[1], direction[2]]
+    if (norm(posDir) < 1e-6):
+      return get_target_waypoint()
+    end
+    local direction_vector_normalized=normalize(posDir)
+    local displacement_pose=p[direction_vector_normalized[0] * position_distance,direction_vector_normalized[1] * position_distance,direction_vector_normalized[2] * position_distance,0,0,0]
+    local wanted_displacement_in_base_frame=pose_sub(pose_trans(feature, displacement_pose), feature)
+    return pose_add(get_target_waypoint(), wanted_displacement_in_base_frame)
+  end
+
+
+  while (True):
+    
+    # ---------------------------------------------------------
+    # 1. Approach Phase
+    # ---------------------------------------------------------
+    movel(Waypoint_1_p, a=1.2, v=0.25)
+    movel(Waypoint_4_p, a=1.2, v=0.25) # Hover directly above target surface
+    
+    # ---------------------------------------------------------
+    # 2. Dynamic Surface Search (Force/Torque Polling)
+    # ---------------------------------------------------------
+    global move_thread_flag_6=0
+    
+    # Spawn thread to descend infinitely in the Base Z- direction
+    thread move_thread_6():
+      enter_critical
+      move_thread_flag_6 = 1
+      local towardsPos=calculate_point_to_move_towards(p[0.0,0.0,0.0,0.0,0.0,0.0], [0.0,0.0,-1.0], 1000.0)
+      movel(towardsPos, a=1.2, v=0.02) # Very slow target velocity (0.02 m/s) to prevent impact damage
+      move_thread_flag_6 = 2
+      exit_critical
+    end
+    
+    move_thread_flag_6 = 0
+    move_thread_han_6 = run move_thread_6()
+    
+    # Primary logic loop: Poll the F/T sensor during descent
+    while (True):
+      local targetTcpDirection=get_target_tcp_speed()
+      local stepsToRetract=tool_contact(direction=targetTcpDirection) # Detect collision with the car hood
+      
+      if (stepsToRetract > 0):
+        kill move_thread_han_6
+        stopl(3.0)
+        
+        # Calculate exactly where contact occurred
+        local backTrackMovement=get_actual_joint_positions_history(stepsToRetract)
+        local contactPose=get_forward_kin(backTrackMovement)
+        local posDir=[targetTcpDirection[0],targetTcpDirection[1],targetTcpDirection[2]]
+        local retractTo=contactPose
+        
+        if (norm(posDir) > 1e-6):
+          local normalizedPosDir=normalize(posDir)
+          # Retract exactly +5mm above the surface to prepare for Force Mode initialization
+          local additionalRetraction=p[normalizedPosDir[0] * 0.005, normalizedPosDir[1] * 0.005, normalizedPosDir[2] * 0.005, 0, 0, 0]
+          retractTo = pose_sub(contactPose, additionalRetraction)
+        end
+        
+        movel(retractTo, a=3.0, v=0.1)
+        break # Surface found, exit search
+      end
+      
+      sync()
+    end
+    
+    # ---------------------------------------------------------
+    # 3. Active Compliance: Force Mode Polishing
+    # ---------------------------------------------------------
+    sleep(0.02)
+    zero_ftsensor() # Tare the sensor to nullify tool gravity before applying force
+    
+    # Enable Active Force Control
+    # task_frame: tool_pose() -> Align forces to the Tool Center Point frame
+    # selection_vector: [0, 0, 1, 0, 0, 0] -> Only Z-axis is compliant (Force). X, Y, and rotations remain rigid (Position).
+    # wrench: [0.0, 0.0, 10.0, 0.0, 0.0, 0.0] -> Apply exactly 10 Newtons of force in the positive Z-direction.
+    # type: 2 -> Transform coordinates freely
+    # limits: Velocity limits preventing runaway if the surface drops off unexpectedly
+    force_mode(tool_pose(), [0, 0, 1, 0, 0, 0], [0.0, 0.0, 10.0, 0.0, 0.0, 0.0], 2, [0.1, 0.1, 0.15, 0.3490658503988659, 0.3490658503988659, 0.3490658503988659])
+    
+    # Execute the X/Y Cartesian polishing pathway. 
+    # NOTE: Because Z is compliant in Force Mode, the Z-values of these waypoints are ignored 
+    # by the controller. It will physically adapt the Z-height dynamically to maintain 10N.
+    movel(Waypoint_2_p, a=1.2, v=0.25)
+    movel(Waypoint_3_p, a=1.2, v=0.25)
+    movel(Waypoint_5_p, a=1.2, v=0.25)
+    movel(Waypoint_6_p, a=1.2, v=0.25)
+    movel(Waypoint_7_p, a=1.2, v=0.25)
+    movel(Waypoint_8_p, a=1.2, v=0.25)
+    movel(Waypoint_9_p, a=1.2, v=0.25)
+    movel(Waypoint_10_p, a=1.2, v=0.25)
+    
+    # Terminate compliance
+    end_force_mode()
+    stopl(5.0)
+    
+    # ---------------------------------------------------------
+    # 4. Safe Exit
+    # ---------------------------------------------------------
+    # Retreat safely using joint space to evade obstacles
+    movej(get_inverse_kin(Waypoint_11_p, qnear=Waypoint_11_q), a=1.396, v=1.047)
+    
+    halt # Polishing cycle complete
+  end
+end
