@@ -1,6 +1,6 @@
-# UR10e Active Compliance and Force Control
+# UR3e Active Compliance and Force Control
 
-This project highlights a key advantage of collaborative robots (UR10e) over traditional rigid industrial arms: the ability to decouple rigid positional control from compliant force control along specific Cartesian axes.
+This project highlights a key advantage of collaborative robots (UR3e) over traditional rigid industrial arms: the ability to decouple rigid positional control from compliant force control along specific Cartesian axes.
 
 ## 1. The Polishing Challenge
 When an industrial robot polishes a car hood, the surface is never perfectly flat—it curves in 3D space. 
@@ -22,7 +22,7 @@ force_mode(tool_pose(), [0, 0, 1, 0, 0, 0], [0.0, 0.0, 10.0, 0.0, 0.0, 0.0], 2, 
 ```
 Here is the engineering breakdown of what this accomplishes:
 1. **Task Frame (`tool_pose()`)**: The forces will be calculated relative to the Tool Center Point (TCP), not the base of the robot. This ensures the force is always applied perpendicular to the tool face.
-2. **Selection Vector (`[0, 0, 1, 0, 0, 0]`)**: This matrix tells the UR10e controller to remain *perfectly rigid* in the X, Y, Rx, Ry, and Rz axes. However, it hands the Z-axis over to compliance control.
+2. **Selection Vector (`[0, 0, 1, 0, 0, 0]`)**: This matrix tells the UR3e controller to remain *perfectly rigid* in the X, Y, Rx, Ry, and Rz axes. However, it hands the Z-axis over to compliance control.
 3. **Wrench (`[0.0, 0.0, 10.0, ...]`)**: The robot is commanded to exert a constant 10 Newtons of force in that compliant Z-axis.
 4. **Velocity Limits**: The final array sets maximum drift speeds (e.g., 0.15 m/s in Z). If the car hood was suddenly removed, the robot wouldn't plunge violently toward the floor; it would only drop at 0.15 m/s before erroring out.
 

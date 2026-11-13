@@ -1,8 +1,8 @@
-# Universal Robots UR10e: Active Surface Polishing Routine
+# Universal Robots UR3e: Active Surface Polishing Routine
 # =========================================================
 # Description:
 # This script isolates the core user-programmed logic for an automated surface
-# polishing task using a UR10e.
+# polishing task using a UR3e.
 #
 # Unlike standard Cartesian movements, this logic implements Active Compliance
 # Control via UR's `force_mode`. It dynamically searches for the vehicle hood,

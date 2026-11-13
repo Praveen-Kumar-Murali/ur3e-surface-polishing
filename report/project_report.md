@@ -1,18 +1,18 @@
-# Collaborative Surface Polishing (UR10e)
+# Collaborative Surface Polishing (UR3e)
 
 ## 1. Introduction
-This documentation outlines the architecture, logic, and force-control mathematics behind an automated surface polishing (e.g., sanding, wiping, buffing) application utilizing a Universal Robots UR10e. Using native URScript, the system demonstrates Active Compliance Control (`force_mode`) to maintain constant tool pressure across a complex, unpredictable contoured surface (such as a vehicle hood).
+This documentation outlines the architecture, logic, and force-control mathematics behind an automated surface polishing (e.g., sanding, wiping, buffing) application utilizing a Universal Robots UR3e. Using native URScript, the system demonstrates Active Compliance Control (`force_mode`) to maintain constant tool pressure across a complex, unpredictable contoured surface (such as a vehicle hood).
 
 ## 2. System Overview
 Unlike traditional industrial robotics where rigid positioning is paramount, collaborative polishing requires the end-effector to physically yield to the environment. If the pre-programmed Z-axis trajectory deviates even slightly from the physical curvature of the car hood, a rigid arm will either lose surface contact or crash forcefully into the workpiece. 
 
-To solve this, the UR10e leverages its built-in six-axis Force/Torque (F/T) sensors to:
+To solve this, the UR3e leverages its built-in six-axis Force/Torque (F/T) sensors to:
 1. Dynamically search for the hood surface (`tool_contact`),
 2. Tare the tool payload gravity vector (`zero_ftsensor`),
 3. De-couple the spatial axes, applying a constant 10-Newton downward pressure along the Tool Z-axis while remaining perfectly position-rigid along the Tool X and Y axes.
 
 ## 3. Robot and Controller Specifications
-- **Manipulator**: Universal Robots UR10e (6-Axis Collaborative Robot)
+- **Manipulator**: Universal Robots UR3e (6-Axis Collaborative Robot)
 - **Programming Environment**: UR Polyscope / Native URScript
 - **End-Effector**: Simulated Polishing Pad
 - **Key Sensor Integration**: Native `force_mode()` and `tool_contact()` physics polling
@@ -29,7 +29,7 @@ The URScript logic executes the polishing pathway in three distinct control phas
 - **Gravitational Nullification**: The `zero_ftsensor()` command is mathematically critical. It calibrates the tool flange F/T reading to zero immediately prior to contact. This guarantees the subsequent 10N command isn't corrupted by the inherent weight of the polishing end-effector pulling down on the flange.
 
 ### Phase 3: Active Compliance Execution
-The script activates the UR10e `force_mode` matrix:
+The script activates the UR3e `force_mode` matrix:
 `force_mode(tool_pose(), [0, 0, 1, 0, 0, 0], [0.0, 0.0, 10.0, 0.0, 0.0, 0.0], 2, [0.1, 0.1, 0.15, ...])`
 
 - **Task Frame (`tool_pose`)**: All forces are calculated orthogonal to the end-effector face, not the robot base.
